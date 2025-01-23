@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"enconding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -40,15 +41,16 @@ func main(){
 	router.HandleFunc("/users/{id}", updateUser(db)).Methods("PUT")
 	router.HandleFunc("/users/{id}", deleteUser(db)).Methods("DELETE")
 
+
 //start server
 	log.Fatal(http.ListenAndServe(":8000", jsonContendTypeMiddleware(router)))
 		return http.HandleFunc(func(w http.ResponseWriter, r *http.Request){
 			w.Header().Set("Contend-Type", "application/json")
 			next.ServeHTTP(w, r)
 		})
-
-
 	}
+	
+	//get all users
 	func getUsers(db *sql.DB) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request){
 			rows, err := db.Query("SELECT * FROM users")
@@ -72,19 +74,20 @@ func main(){
 		}
 	}
 
+	//get user by id
+	func getUser(db *sql.DB) http.HandlerFunc{
+		return func(w http.ResponseWriter, r *http.Request){
+			vars := mux.Vars(r)
+			id := vars["id"]
 
-
-		
-
-
-
-
-
-
-
-
-
-
+			var u User
+			err := db.QueryRow("SELECT * FROM users WHERE id = $1", id).Scan(&u.ID, &u.Name, &u.Email)
+			if err != nil{
+				log.Fatal(err)
+			}
+			json.NewEncoder(w).Encode(u)
+		}
+	}
 
 
 
