@@ -3,15 +3,11 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"enconding/json"
-	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
-
 	"github.com/gorilla/mux"
-	"github.com/lib/pq"
+	_"github.com/lib/pq"
 )
 
 type User struct {
@@ -24,14 +20,20 @@ type User struct {
 
 func main(){
 	
-	//connect to database
+	//connect to my database
 	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if err != nil{
 		log.Fatal(err)
 	}
 	defer db.Close()
 
+	//create a table, if it does not exist
+	_, err = db.Exec("CREATE TABLE IF NOT EXISTS users(id SERIAL PRIMARY KEY, name TEXT, email TEXT)")
 
+	if err != nil {
+		log.Fatal(err)
+	}
+	
 	//create router
 	router := mux.NewRouter()
 
@@ -42,14 +44,21 @@ func main(){
 	router.HandleFunc("/users/{id}", deleteUser(db)).Methods("DELETE")
 
 
-//start server
-	log.Fatal(http.ListenAndServe(":8000", jsonContendTypeMiddleware(router)))
-		return http.HandleFunc(func(w http.ResponseWriter, r *http.Request){
-			w.Header().Set("Contend-Type", "application/json")
+	//start server
+	log.Fatal(http.ListenAndServe(":8000", jsonContentTypeMiddleware(router)))
+
+
+	}// end main
+
+	func jsonContentTypeMiddleware(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
 			next.ServeHTTP(w, r)
 		})
 	}
 	
+
+
 	//get all users
 	func getUsers(db *sql.DB) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request){
@@ -74,6 +83,7 @@ func main(){
 		}
 	}
 
+
 	//get user by id
 	func getUser(db *sql.DB) http.HandlerFunc{
 		return func(w http.ResponseWriter, r *http.Request){
@@ -83,15 +93,68 @@ func main(){
 			var u User
 			err := db.QueryRow("SELECT * FROM users WHERE id = $1", id).Scan(&u.ID, &u.Name, &u.Email)
 			if err != nil{
-				log.Fatal(err)
+				w.WriteHeader(http.StatusNotFound)
+				return
 			}
 			json.NewEncoder(w).Encode(u)
 		}
 	}
 
+	//create a user
+	func createUser(db *sql.DB) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			var u User
+			json.NewDecoder(r.Body).Decode(&u)
+	
+			err := db.QueryRow("INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id", u.Name, u.Email).Scan(&u.ID)
+			if err != nil {
+				log.Fatal(err)
+			}
+	
+			json.NewEncoder(w).Encode(u)
+		}
+	}
 
 
+	//update user
+	func updateUser(db *sql.DB) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			var u User
+			json.NewDecoder(r.Body).Decode(&u)
+	
+			vars := mux.Vars(r)
+			id := vars["id"]
+	
+			_, err := db.Exec("UPDATE users SET name = $1, email = $2 WHERE id = $3", u.Name, u.Email, id)
+			if err != nil {
+				log.Fatal(err)
+			}
+	
+			json.NewEncoder(w).Encode(u)
+		}
+	}
 
+// delete user
+func deleteUser(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id := vars["id"]
 
-
+		var u User
+		err := db.QueryRow("SELECT * FROM users WHERE id = $1", id).Scan(&u.ID, &u.Name, &u.Email)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		} else {
+			_, err := db.Exec("DELETE FROM users WHERE id = $1", id)
+			if err != nil {
+				//todo : fix error handling
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+	
+			json.NewEncoder(w).Encode("User deleted")
+		}
+	}
+}
 
